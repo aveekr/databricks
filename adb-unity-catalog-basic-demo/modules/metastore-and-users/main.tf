@@ -70,31 +70,31 @@ provider "databricks" {
 # }
 
 # // Create the first unity catalog metastore
-# resource "databricks_metastore" "this" {
-#   name = "primary"
-#   storage_root = format("abfss://%s@%s.dfs.core.windows.net/",
-#     azurerm_storage_container.unity_catalog.name,
-#   azurerm_storage_account.unity_catalog.name)
-#   force_destroy = true
-#   owner         = "account_unity_admin"
-# }
+resource "databricks_metastore" "this" {
+  name = "primary"
+  storage_root = format("abfss://%s@%s.dfs.core.windows.net/",
+    azurerm_storage_container.unity_catalog.name,
+  azurerm_storage_account.unity_catalog.name)
+  force_destroy = true
+  owner         = "account_unity_admin"
+}
 
 # // Assign managed identity to metastore
-# resource "databricks_metastore_data_access" "first" {
-#   metastore_id = databricks_metastore.this.id
-#   name         = "the-metastore-key"
-#   azure_managed_identity {
-#     access_connector_id = azurerm_databricks_access_connector.unity.id
-#   }
-#   is_default = true
-# }
+resource "databricks_metastore_data_access" "first" {
+  metastore_id = databricks_metastore.this.id
+  name         = "the-metastore-key"
+  azure_managed_identity {
+    access_connector_id = azurerm_databricks_access_connector.unity.id
+  }
+  is_default = true
+}
 
 # // Attach the databricks workspace to the metastore
-# resource "databricks_metastore_assignment" "this" {
-#   workspace_id         = local.databricks_workspace_id
-#   metastore_id         = databricks_metastore.this.id
-#   default_catalog_name = "hive_metastore"
-# }
+resource "databricks_metastore_assignment" "this" {
+  workspace_id         = local.databricks_workspace_id
+  metastore_id         = databricks_metastore.this.id
+  default_catalog_name = "hive_metastore"
+}
 
 
 // Initialize provider at Azure account-level
@@ -170,36 +170,37 @@ locals {
 }
 
 # // All governed by AzureAD, create or remove service to/from databricks account
-# resource "databricks_service_principal" "sp" {
-#   provider       = databricks.azure_account
-#   for_each       = local.all_spns
-#   application_id = local.all_spns[each.key]["application_id"]
-#   display_name   = local.all_spns[each.key]["display_name"]
-#   active         = local.all_spns[each.key]["account_enabled"]
-#   external_id    = each.key
-#   force          = true
-# }
+resource "databricks_service_principal" "sp" {
+  provider       = databricks.azure_account
+  for_each       = local.all_spns
+  application_id = local.all_spns[each.key]["application_id"]
+  display_name   = local.all_spns[each.key]["display_name"]
+  active         = local.all_spns[each.key]["account_enabled"]
+  external_id    = each.key
+  force          = true
+}
 
-# locals {
-#   account_admin_members = toset(flatten([for group in values(data.azuread_group.this) : [group.display_name == "account_unity_admin" ? group.members : []]]))
-# }
-# # Extract information about real account admins users
-# data "azuread_users" "account_admin_users" {
-#   ignore_missing = true
-#   object_ids     = local.account_admin_members
-# }
+locals {
+  account_admin_members = toset(flatten([for group in values(data.azuread_group.this) : [group.display_name == "account_unity_admin" ? group.members : []]]))
+}
 
-# locals {
-#   all_account_admin_users = {
-#     for user in data.azuread_users.account_admin_users.users : user.object_id => user
-#   }
-# }
+# Extract information about real account admins users
+data "azuread_users" "account_admin_users" {
+  ignore_missing = true
+  object_ids     = local.account_admin_members
+}
+
+locals {
+  all_account_admin_users = {
+    for user in data.azuread_users.account_admin_users.users : user.object_id => user
+  }
+}
 
 # // Making all users on account_unity_admin group as databricks account admin
-# resource "databricks_user_role" "account_admin" {
-#   provider = databricks.azure_account
-#   for_each = local.all_account_admin_users
-#   user_id  = databricks_user.this[each.key].id
-#   role     = "account_admin"
-#   depends_on = [databricks_group.this, databricks_user.this, databricks_service_principal.sp]
-# }
+resource "databricks_user_role" "account_admin" {
+  provider = databricks.azure_account
+  for_each = local.all_account_admin_users
+  user_id  = databricks_user.this[each.key].id
+  role     = "account_admin"
+  depends_on = [databricks_group.this, databricks_user.this, databricks_service_principal.sp]
+}
